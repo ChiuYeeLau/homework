@@ -42,7 +42,7 @@ def main():
         observations = []
         actions = []
         for i in range(args.num_rollouts):
-            print('iter', i)
+            if i % 10 == 0: print('iter', i)
             obs = env.reset()
             done = False
             totalr = 0.
@@ -56,7 +56,7 @@ def main():
                 steps += 1
                 if args.render:
                     env.render()
-                if steps % 100 == 0: print("%i/%i"%(steps, max_steps))
+                #if steps % 100 == 0: print("%i/%i"%(steps, max_steps))
                 if steps >= max_steps:
                     break
             returns.append(totalr)
@@ -67,6 +67,14 @@ def main():
 
         expert_data = {'observations': np.array(observations),
                        'actions': np.array(actions)}
+        
+    import os
+    s = os.path.join('.', 'expert_data','%s.pkl' % args.envname)
+    with open(s,'wb') as f:
+        pickle.dump(expert_data,f)
+        print('obs.shape:%s' % obs.shape)
+        print('action.shape:%s' % action.shape)
+        print('save expert_data into file: %s' % s)
 
 if __name__ == '__main__':
     main()
