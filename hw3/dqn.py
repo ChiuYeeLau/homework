@@ -127,7 +127,19 @@ def learn(env,
     # Older versions of TensorFlow may require using "VARIABLES" instead of "GLOBAL_VARIABLES"
     ######
     
-    # YOUR CODE HERE
+    current_Q = q_func(obs_t_float, num_actions, scope="q_func", reuse=False)
+
+    target_Q = q_func(obs_tp1_float, num_actions, scope="target_q_func", reuse=False)
+
+    action_sample = tf.contrib.distributions.Categorical(p=current_Q).sample()
+
+    q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='q_func')
+
+    target_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='target_q_func')
+
+    bellman_backup = rew_t_ph + gamma*tf.reduce_max(target_Q, axis=1)*(1-done_mask_ph)
+
+    total_error = tf.nn.l2_loss(tf.reduce_sum(tf.multiply(current_Q, tf.one_hot(indices=act_t_ph, depth=num_actions)), axis=1)-bellman_backup)
 
     ######
 
@@ -193,9 +205,28 @@ def learn(env,
         # might as well be random, since you haven't trained your net...)
 
         #####
-        
-        # YOUR CODE HERE
+        if t % 10==0:
+            print(t)
 
+        idx = replay_buffer.store_frame(last_obs)
+
+        k_frames = replay_buffer.encode_recent_observation()
+        
+        epsilon_greedy = random.random()
+        if epsilon_greedy <= exploration.value(t) or model_initialized == False:
+            action = env.action_space.sample()
+        else:
+            action = session.run(action_sample, feed_dict={obs_t_float: k_frames})
+
+        obs, reward, done, info = env.step(action)
+
+        replay_buffer.store_effect(idx, action, reward, done)
+
+        if done:
+            last_obs = env.reset()
+        else:
+            last_obs = obs
+        
         #####
 
         # at this point, the environment should have been advanced one step (and
@@ -244,8 +275,30 @@ def learn(env,
             # variable num_param_updates useful for this (it was initialized to 0)
             #####
             
-            # YOUR CODE HERE
+            # 3.a:
+            obs_t_batch, act_batch, rew_batch, obs_tp1_batch, done_mask = replay_buffer.sample(batch_size)
 
+            # 3.b:
+            if model_initialized == False:
+                initialize_interdependent_variables(session, tf.global_variables(), {
+                    obs_t_ph: obs_t_batch,
+                    obs_tp1_ph: obs_tp1_batch,
+                })
+
+            # 3.c:
+            loss, _ = session.run([total_error, train_fn], feed_dict={obs_t_ph: obs_t_batch,
+                                    act_t_ph: act_batch,
+                                    rew_t_ph: rew_batch,
+                                    obs_tp1_ph: obs_tp1_batch,
+                                    done_mask_ph: done_mask,
+                                    learning_rate: optimizer_spec.lr_schedule.value(t)})
+
+            # 3.d:
+            if num_param_updates % target_update_freq == 0:
+                session.run(update_target_fn)
+
+            num_param_updates += 1
+            
             #####
 
         ### 4. Log progress
