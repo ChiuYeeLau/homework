@@ -69,7 +69,7 @@ def A3C_learn(env, train_iters=FLAGS.max_iters, num_timesteps=20, gamma=0.95):
                     observations.append(obs_t)
                     ###1. Build the graph
                     act_P, V_t_ph = (model.act_Ps[0,:], model.Vs[0])
-                    act_t_ph = tf.contrib.distributions.Categorical(p=act_P).sample()
+                    act_t_ph = tf.contrib.distributions.Categorical(probs=act_P).sample()
 
                     ### 2. Run and collect the data: step the env and store the transition
                     act_t, V_t = sess.run([act_t_ph, V_t_ph], feed_dict={model.inputs: obs_t[None,:]})

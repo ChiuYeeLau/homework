@@ -1,4 +1,5 @@
 import sys
+import os
 import gym.spaces
 import itertools
 import numpy as np
@@ -9,6 +10,8 @@ from collections import namedtuple
 from dqn_utils import *
 
 OptimizerSpec = namedtuple("OptimizerSpec", ["constructor", "kwargs", "lr_schedule"])
+
+SAVE_DIR = '/tmp/DQN'
 
 def learn(env,
           q_func,
@@ -131,7 +134,7 @@ def learn(env,
 
     target_Q = q_func(obs_tp1_float, num_actions, scope="target_q_func", reuse=False)
 
-    action_sample = tf.contrib.distributions.Categorical(p=current_Q).sample()
+    action_sample = tf.contrib.distributions.Categorical(probs=current_Q).sample()
 
     q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='q_func')
 
@@ -140,6 +143,17 @@ def learn(env,
     bellman_backup = rew_t_ph + gamma*tf.reduce_max(target_Q, axis=1)*(1-done_mask_ph)
 
     total_error = tf.nn.l2_loss(tf.reduce_sum(tf.multiply(current_Q, tf.one_hot(indices=act_t_ph, depth=num_actions)), axis=1)-bellman_backup)
+
+    for var in tf.trainable_variables():
+        tf.summary.histogram(var.op.name, var)
+
+    tf.summary.scalar('total_loss', total_error)
+
+    summary_op = tf.summary.merge_all()
+
+    summary_writer = tf.summary.FileWriter(SAVE_DIR, session.graph)
+
+    saver = tf.train.Saver(tf.global_variables())
 
     ######
 
@@ -286,7 +300,7 @@ def learn(env,
                 })
 
             # 3.c:
-            loss, _ = session.run([total_error, train_fn], feed_dict={obs_t_ph: obs_t_batch,
+            loss, _, summary_str= session.run([total_error, train_fn, summary_op], feed_dict={obs_t_ph: obs_t_batch,
                                     act_t_ph: act_batch,
                                     rew_t_ph: rew_batch,
                                     obs_tp1_ph: obs_tp1_batch,
@@ -296,6 +310,14 @@ def learn(env,
             # 3.d:
             if num_param_updates % target_update_freq == 0:
                 session.run(update_target_fn)
+
+            if num_param_updates % 10 == 0:
+                print(num_param_updates)
+                summary_writer.add_summary(summary_str, num_param_updates)
+
+            if num_param_updates % 1000 == 0:
+                checkpoint_path = os.path.join(SAVE_DIR, 'model.ckpt')
+                saver.save(session, checkpoint_path, global_step=num_param_updates)
 
             num_param_updates += 1
             
