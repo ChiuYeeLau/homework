@@ -19,7 +19,7 @@ def learn(env,
           session,
           exploration=LinearSchedule(1000000, 0.1),
           stopping_criterion=None,
-          replay_buffer_size=1000000,
+          replay_buffer_size=100000,
           batch_size=32,
           gamma=0.99,
           learning_starts=50000,
@@ -219,8 +219,8 @@ def learn(env,
         # might as well be random, since you haven't trained your net...)
 
         #####
-        if t % 10==0:
-            print(t)
+        if t % 100==0:
+            print('iter:', t)
 
         idx = replay_buffer.store_frame(last_obs)
 
@@ -311,7 +311,7 @@ def learn(env,
             if num_param_updates % target_update_freq == 0:
                 session.run(update_target_fn)
 
-            if num_param_updates % 10 == 0:
+            if num_param_updates % 100 == 0:
                 print(num_param_updates)
                 summary_writer.add_summary(summary_str, num_param_updates)
 

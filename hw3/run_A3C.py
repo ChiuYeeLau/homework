@@ -21,7 +21,7 @@ tf.app.flags.DEFINE_string('train_dir', '/tmp/A3C_train',
 tf.app.flags.DEFINE_string('save_dir', '/tmp/A3C_train',
                            """Directory where to write event logs """
                            """and checkpoint.""")
-tf.app.flags.DEFINE_integer('max_iters', 10000,
+tf.app.flags.DEFINE_integer('max_iters', 100000,
                             """Number of batches to run.""")
 
 def Return_compute(rewards, V_T, gamma=0.95):
@@ -44,8 +44,9 @@ def A3C_learn(env, train_iters=FLAGS.max_iters, num_timesteps=20, gamma=0.95):
 
         summary_op = tf.summary.merge_all()
 
-
-        with tf.Session() as sess:
+        config = tf.ConfigProto() 
+        config.gpu_options.allow_growth = True 
+        with tf.Session(config=config) as sess:
             init = tf.global_variables_initializer()
             sess.run(init)
 
@@ -90,11 +91,11 @@ def A3C_learn(env, train_iters=FLAGS.max_iters, num_timesteps=20, gamma=0.95):
                 _, summary_str = sess.run([model.apply_gradients_op, summary_op], feed_dict=feed_dict)
                 print(global_step)
                 
-                if global_step % 10 == 0:
+                if global_step % 100 == 0:
                     print(global_step, train_iters)
                     summary_writer.add_summary(summary_str, global_step)
 
-                if global_step % 100 == 0 or (global_step + 1) == train_iters:
+                if global_step % 1000 == 0 or (global_step + 1) == train_iters:
                     checkpoint_path = os.path.join(FLAGS.save_dir, 'model.ckpt')
                     saver.save(sess, checkpoint_path, global_step=global_step)
 
