@@ -23,10 +23,14 @@ def atari_model(img_in, num_actions, scope, reuse=False):
             out = layers.convolution2d(out, num_outputs=64, kernel_size=3, stride=1, activation_fn=tf.nn.relu)
         out = layers.flatten(out)
         with tf.variable_scope("action_value"):
-            out = layers.fully_connected(out, num_outputs=512,         activation_fn=tf.nn.relu)
-            out = layers.fully_connected(out, num_outputs=num_actions, activation_fn=None)
-
-        return out
+            action_out = layers.fully_connected(out, num_outputs=512,         activation_fn=tf.nn.relu)
+            action_out = layers.fully_connected(action_out, num_outputs=num_actions, activation_fn=None)
+        with tf.variable_scope("state_value"):
+            state_out = layers.fully_connected(out, num_outputs=512,         activation_fn=tf.nn.relu)
+            state_out = layers.fully_connected(state_out, num_outputs=1, activation_fn=None)
+        with tf.variable_scope("Q_value"):
+            Q_out = state_out + (action_out - tf.reduce_mean(action_out, axis=1, keep_dims=True))
+        return Q_out
 
 def atari_learn(env,
                 session,
@@ -67,7 +71,7 @@ def atari_learn(env,
         session=session,
         exploration=exploration_schedule,
         stopping_criterion=stopping_criterion,
-        replay_buffer_size=100000,
+        replay_buffer_size=1000000,
         batch_size=32,
         gamma=0.99,
         learning_starts=50000,
@@ -111,7 +115,7 @@ def get_env(task, seed):
     set_global_seeds(seed)
     env.seed(seed)
 
-    expt_dir = '/tmp/hw3_vid_dir2/'
+    expt_dir = '/tmp/hw3_vid_dir2_Duel_DDQN/'
     env = wrappers.Monitor(env, osp.join(expt_dir, "gym"), force=True)
     env = wrap_deepmind(env)
 

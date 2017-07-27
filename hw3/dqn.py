@@ -11,7 +11,7 @@ from dqn_utils import *
 
 OptimizerSpec = namedtuple("OptimizerSpec", ["constructor", "kwargs", "lr_schedule"])
 
-SAVE_DIR = '/tmp/DQN'
+SAVE_DIR = '/tmp/Duel_DDQN'
 
 def learn(env,
           q_func,
@@ -19,7 +19,7 @@ def learn(env,
           session,
           exploration=LinearSchedule(1000000, 0.1),
           stopping_criterion=None,
-          replay_buffer_size=100000,
+          replay_buffer_size=1000000,
           batch_size=32,
           gamma=0.99,
           learning_starts=50000,
@@ -130,31 +130,37 @@ def learn(env,
     # Older versions of TensorFlow may require using "VARIABLES" instead of "GLOBAL_VARIABLES"
     ######
     
-    current_Q = q_func(obs_t_float, num_actions, scope="q_func", reuse=False)
-
-    target_Q = q_func(obs_tp1_float, num_actions, scope="target_q_func", reuse=False)
-
-    action_sample = tf.contrib.distributions.Categorical(probs=current_Q).sample()
-
+    current_q_func = q_func(obs_t_float, num_actions, scope="q_func", reuse=False) # Current Q-Value Function
     q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='q_func')
 
+    target_q_func = q_func(obs_tp1_float, num_actions, scope="target_q_func", reuse=False) # Target Q-Value Function
     target_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='target_q_func')
 
-    bellman_backup = rew_t_ph + gamma*tf.reduce_max(target_Q, axis=1)*(1-done_mask_ph)
+    act_t = tf.one_hot(act_t_ph, depth=num_actions, dtype=tf.float32, name="action_one_hot")
+    q_act_t = tf.reduce_sum(act_t*current_q_func, axis=1)
 
-    total_error = tf.nn.l2_loss(tf.reduce_sum(tf.multiply(current_Q, tf.one_hot(indices=act_t_ph, depth=num_actions)), axis=1)-bellman_backup)
+    max_act_t = tf.one_hot(tf.argmax(current_q_func, axis=1), depth=num_actions, dtype=tf.float32, name="max_action_one_hot")
+    q_max_act_t = tf.reduce_sum(max_act_t*target_q_func, axis=1)
 
+    y = rew_t_ph + gamma * q_max_act_t * (1-done_mask_ph) #which axis for max?
+    total_error = tf.nn.l2_loss(tf.subtract(y, q_act_t))
+
+    if tf.gfile.Exists(SAVE_DIR):
+        tf.gfile.DeleteRecursively(SAVE_DIR)
+    tf.gfile.MakeDirs(SAVE_DIR)
+    
     for var in tf.trainable_variables():
         tf.summary.histogram(var.op.name, var)
 
     tf.summary.scalar('total_loss', total_error)
+
+    tf.summary.histogram('Q_value', current_q_func[0,:])
 
     summary_op = tf.summary.merge_all()
 
     summary_writer = tf.summary.FileWriter(SAVE_DIR, session.graph)
 
     saver = tf.train.Saver(tf.global_variables())
-
     ######
 
     # construct optimization op (with gradient clipping)
@@ -219,27 +225,26 @@ def learn(env,
         # might as well be random, since you haven't trained your net...)
 
         #####
-        if t % 100==0:
-            print('iter:', t)
-
         idx = replay_buffer.store_frame(last_obs)
 
-        k_frames = replay_buffer.encode_recent_observation()
-        
-        epsilon_greedy = random.random()
-        if epsilon_greedy <= exploration.value(t) or model_initialized == False:
+        if t == 0:
+            act, reward, done = env.action_space.sample(), 0, False
+
+        epsilon = exploration.value(t)
+        if not model_initialized or random.random() < epsilon:
             action = env.action_space.sample()
         else:
-            action = session.run(action_sample, feed_dict={obs_t_float: k_frames})
+            k_frames = replay_buffer.encode_recent_observation()
+            current_val = session.run(current_q_func, feed_dict={obs_t_ph: k_frames[None,:]})
+            action = np.argmax(current_val)
 
-        obs, reward, done, info = env.step(action)
+        last_obs, reward, done, info = env.step(action)
 
         replay_buffer.store_effect(idx, action, reward, done)
 
-        if done:
+        if done == True:
             last_obs = env.reset()
-        else:
-            last_obs = obs
+            done = False
         
         #####
 
@@ -298,9 +303,11 @@ def learn(env,
                     obs_t_ph: obs_t_batch,
                     obs_tp1_ph: obs_tp1_batch,
                 })
+                session.run(update_target_fn)
+                model_initialized = True
 
             # 3.c:
-            loss, _, summary_str= session.run([total_error, train_fn, summary_op], feed_dict={obs_t_ph: obs_t_batch,
+            loss, _= session.run([total_error, train_fn], feed_dict={obs_t_ph: obs_t_batch,
                                     act_t_ph: act_batch,
                                     rew_t_ph: rew_batch,
                                     obs_tp1_ph: obs_tp1_batch,
@@ -308,19 +315,25 @@ def learn(env,
                                     learning_rate: optimizer_spec.lr_schedule.value(t)})
 
             # 3.d:
-            if num_param_updates % target_update_freq == 0:
+            if t % target_update_freq == 0:
                 session.run(update_target_fn)
 
-            if num_param_updates % 100 == 0:
-                print(num_param_updates)
-                summary_writer.add_summary(summary_str, num_param_updates)
-
             if num_param_updates % 1000 == 0:
+                print(num_param_updates)
+                summary_str = session.run(summary_op, feed_dict={obs_t_ph: obs_t_batch,
+                                    act_t_ph: act_batch,
+                                    rew_t_ph: rew_batch,
+                                    obs_tp1_ph: obs_tp1_batch,
+                                    done_mask_ph: done_mask,
+                                    learning_rate: optimizer_spec.lr_schedule.value(t)})
+                summary_writer.add_summary(summary_str, global_step=num_param_updates)
+
+            if num_param_updates % 10000 == 0:
                 checkpoint_path = os.path.join(SAVE_DIR, 'model.ckpt')
                 saver.save(session, checkpoint_path, global_step=num_param_updates)
 
             num_param_updates += 1
-            
+
             #####
 
         ### 4. Log progress
