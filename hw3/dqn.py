@@ -11,7 +11,7 @@ from dqn_utils import *
 
 OptimizerSpec = namedtuple("OptimizerSpec", ["constructor", "kwargs", "lr_schedule"])
 
-SAVE_DIR = '/tmp/Duel_DDQN'
+SAVE_DIR = '/tmp/Dual_DDQN'
 
 def learn(env,
           q_func,

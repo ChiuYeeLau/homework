@@ -115,7 +115,7 @@ def get_env(task, seed):
     set_global_seeds(seed)
     env.seed(seed)
 
-    expt_dir = '/tmp/hw3_vid_dir2_Duel_DDQN/'
+    expt_dir = '/tmp/hw3_vid_dir2_Dual_DDQN/'
     env = wrappers.Monitor(env, osp.join(expt_dir, "gym"), force=True)
     env = wrap_deepmind(env)
 
