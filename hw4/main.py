@@ -242,7 +242,7 @@ def main_pendulum(logdir, seed, n_iter, gamma, min_timesteps_per_batch, initial_
 
     # YOUR CODE HERE
     sy_ob_no = tf.placeholder(dtype=tf.float32, shape=[None, ob_dim], name="observations") # batch of observations
-    sy_ac_n = tf.placeholder(shape=[None], name="actions", dtype=tf.int32) # batch of actions taken by the policy, used for policy gradient computation
+    sy_ac_n = tf.placeholder(shape=[None], name="actions", dtype=tf.float32) # batch of actions taken by the policy, used for policy gradient computation
     sy_adv_n = tf.placeholder(shape=[None], name="advantages", dtype=tf.float32) # advantage function estimate
     
     sy_h1 = lrelu(dense(sy_ob_no, 32, "h1", weight_init=normc_initializer(1.0))) # hidden layer
@@ -250,18 +250,17 @@ def main_pendulum(logdir, seed, n_iter, gamma, min_timesteps_per_batch, initial_
     sy_mean_na = dense(sy_h2, ac_dim, 'guass_mean', weight_init=normc_initializer(0.1)) #the mean of the gauss distribute
     sy_logstd_a = tf.get_variable("logstdev", [ac_dim], initializer=tf.zeros_initializer) #the log standard deviation of the gauss distribute
     
-    sy_n = tf.shape(sy_ob_no)[0]
-    sy_dist =  tf.contrib.distributions.Normal(loc=tf.squeeze(sy_mean_na), scale=tf.exp(sy_logstd_a))# logprobability of actions
-    sy_sampled_ac =  sy_dist.sample() # sampled actions, used for defining the policy (NOT computing the policy gradient)
-    sy_logprob_n = sy_dist.log_prob(sy_sampled_ac) # log-prob of actions taken -- used for policy gradient calculation
+    sy_dist = tf.contrib.distributions.Normal(loc=tf.squeeze(sy_mean_na), scale=tf.exp(sy_logstd_a))# logprobability of actions
+    sy_sampled_ac = sy_dist.sample() # sampled actions, used for defining the policy (NOT computing the policy gradient)
+    sy_logprob_n = sy_dist.log_prob(sy_ac_n) # log-prob of actions taken -- used for policy gradient calculation
 
     # The following quantities are just used for computing KL and entropy, JUST FOR DIAGNOSTIC PURPOSES >>>>
     sy_oldmean_na = tf.placeholder(shape=[None, ac_dim], name='oldmean', dtype=tf.float32) # logits BEFORE update (just used for KL diagnostic)
     sy_oldlogstd_a = tf.placeholder(shape=[ac_dim], name='oldlogstd', dtype=tf.float32)
     sy_olddist = tf.contrib.distributions.Normal(loc=tf.squeeze(sy_oldmean_na), scale=tf.exp(sy_oldlogstd_a))
     
-    sy_kl = tf.reduce_sum(tf.contrib.distributions.kl_divergence(sy_dist, sy_olddist)) / tf.to_float(sy_n)
-    sy_ent = tf.reduce_sum(sy_dist.entropy()) / tf.to_float(sy_n)
+    sy_kl = tf.reduce_mean(tf.contrib.distributions.kl_divergence(sy_dist, sy_olddist))
+    sy_ent = tf.reduce_mean(sy_dist.entropy())
     # <<<<<<<<<<<<<
 
 
