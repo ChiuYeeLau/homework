@@ -227,8 +227,7 @@ def learn(env,
         #####
         idx = replay_buffer.store_frame(last_obs)
 
-        if t == 0:
-            act, reward, done = env.action_space.sample(), 0, False
+        if t%10 == 0: print('\r total_step:{}'.format(t), end='')
 
         epsilon = exploration.value(t)
         if not model_initialized or random.random() < epsilon:
@@ -305,6 +304,7 @@ def learn(env,
                 })
                 session.run(update_target_fn)
                 model_initialized = True
+                print('\n start to train the model')
 
             # 3.c:
             loss, _= session.run([total_error, train_fn], feed_dict={obs_t_ph: obs_t_batch,
@@ -319,7 +319,7 @@ def learn(env,
                 session.run(update_target_fn)
 
             if num_param_updates % 1000 == 0:
-                print(num_param_updates)
+                print('add summary:', num_param_updates)
                 summary_str = session.run(summary_op, feed_dict={obs_t_ph: obs_t_batch,
                                     act_t_ph: act_batch,
                                     rew_t_ph: rew_batch,
