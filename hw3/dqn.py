@@ -130,9 +130,11 @@ def learn(env,
     # Older versions of TensorFlow may require using "VARIABLES" instead of "GLOBAL_VARIABLES"
     ######
     
+    #construct current Q network(update every step)
     current_q_func = q_func(obs_t_float, num_actions, scope="q_func", reuse=False) # Current Q-Value Function
     q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='q_func')
 
+    #construct target Q network(update every target_update_freq steps)
     target_q_func = q_func(obs_tp1_float, num_actions, scope="target_q_func", reuse=False) # Target Q-Value Function
     target_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='target_q_func')
 
@@ -142,9 +144,11 @@ def learn(env,
     max_act_t = tf.one_hot(tf.argmax(current_q_func, axis=1), depth=num_actions, dtype=tf.float32, name="max_action_one_hot")
     q_max_act_t = tf.reduce_sum(max_act_t*target_q_func, axis=1)
 
+    #Bellman backup
     y = rew_t_ph + gamma * q_max_act_t * (1-done_mask_ph) #which axis for max?
     total_error = tf.nn.l2_loss(tf.subtract(y, q_act_t))
 
+    #Summary for tensorboard
     if tf.gfile.Exists(SAVE_DIR):
         tf.gfile.DeleteRecursively(SAVE_DIR)
     tf.gfile.MakeDirs(SAVE_DIR)
@@ -229,6 +233,7 @@ def learn(env,
 
         if t%10 == 0: print('\r total_step:{}'.format(t), end='')
 
+        # Choose action with epsilon-greedy
         epsilon = exploration.value(t)
         if not model_initialized or random.random() < epsilon:
             action = env.action_space.sample()
@@ -237,6 +242,7 @@ def learn(env,
             current_val = session.run(current_q_func, feed_dict={obs_t_ph: k_frames[None,:]})
             action = np.argmax(current_val)
 
+        # Step forward
         last_obs, reward, done, info = env.step(action)
 
         replay_buffer.store_effect(idx, action, reward, done)
@@ -293,10 +299,10 @@ def learn(env,
             # variable num_param_updates useful for this (it was initialized to 0)
             #####
             
-            # 3.a:
+            # 3.a get replay memory batch:
             obs_t_batch, act_batch, rew_batch, obs_tp1_batch, done_mask = replay_buffer.sample(batch_size)
 
-            # 3.b:
+            # 3.b init the network:
             if model_initialized == False:
                 initialize_interdependent_variables(session, tf.global_variables(), {
                     obs_t_ph: obs_t_batch,
@@ -306,7 +312,7 @@ def learn(env,
                 model_initialized = True
                 print('\n start to train the model')
 
-            # 3.c:
+            # 3.c train the Q-net:
             loss, _= session.run([total_error, train_fn], feed_dict={obs_t_ph: obs_t_batch,
                                     act_t_ph: act_batch,
                                     rew_t_ph: rew_batch,
@@ -314,10 +320,11 @@ def learn(env,
                                     done_mask_ph: done_mask,
                                     learning_rate: optimizer_spec.lr_schedule.value(t)})
 
-            # 3.d:
+            # 3.d update target Q:
             if t % target_update_freq == 0:
                 session.run(update_target_fn)
-
+            
+            # Summary
             if num_param_updates % 1000 == 0:
                 print('add summary:', num_param_updates)
                 summary_str = session.run(summary_op, feed_dict={obs_t_ph: obs_t_batch,
